@@ -36,6 +36,7 @@ import useSearchMentionUser from '../../hooks/useSearchMentionUser';
 import useSearchEmoji from '../../hooks/useSearchEmoji';
 import formatSelection from '../../lib/formatSelection';
 import { parseEmoji } from '../../lib/emoji';
+import useDropBox from '../../hooks/useDropBox';
 
 const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
   const { styleOverrides, classNames } = useComponentOverrides('ChatInput');
@@ -150,6 +151,7 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
     setShowMembersList
   );
 
+  const { handlePaste } = useDropBox();
   const searchEmoji = useSearchEmoji(
     startReadEmoji,
     setStartReadEmoji,
@@ -463,6 +465,40 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
     }
   };
 
+  const handlePasting = (event) => {
+    const { clipboardData } = event;
+
+    if (!clipboardData) {
+      return;
+    }
+
+    const items = Array.from(clipboardData.items);
+    if (
+      items.some(({ kind, type }) => kind === 'string' && type === 'text/plain')
+    ) {
+      return;
+    }
+
+    const files = items
+      .filter(
+        (item) => item.kind === 'file' && item.type.indexOf('image/') !== -1
+      )
+      .map((item) => {
+        const fileItem = item.getAsFile();
+
+        if (!fileItem) {
+          return;
+        }
+        return fileItem;
+      })
+      .filter((file) => !!file);
+
+    if (files.length) {
+      event.preventDefault();
+      handlePaste(files[0]);
+    }
+  };
+
   const onKeyDown = (e) => {
     switch (true) {
       case e.ctrlKey && e.code === 'KeyI': {
@@ -666,6 +702,7 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
             }}
             onFocus={handleFocus}
             onKeyDown={onKeyDown}
+            onPaste={handlePasting}
             ref={messageRef}
           />
 
