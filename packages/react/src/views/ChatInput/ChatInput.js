@@ -120,9 +120,10 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
   );
   const isLoginIn = useLoginStore((state) => state.isLoginIn);
 
-  const { toggle, setData } = useAttachmentWindowStore((state) => ({
+  const { toggle, setData, data } = useAttachmentWindowStore((state) => ({
     toggle: state.toggle,
     setData: state.setData,
+    data: state.data,
   }));
 
   const userInfo = { _id: userId, username, name };
@@ -147,7 +148,7 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
     RCInstance.auth.onAuthChange((user) => {
       if (user) {
         RCInstance.getCommandsList()
-          .then((data) => setCommands(data.commands || []))
+          .then((response) => setCommands(response.commands || []))
           .catch(console.error);
 
         RCInstance.getChannelMembers(isChannelPrivate)
@@ -183,6 +184,12 @@ const ChatInput = ({ scrollToBottom, clearUnreadDividerRef }) => {
       setEditMessage({});
     }
   }, [deletedMessage]);
+
+  useEffect(() => {
+    if (data === null && inputRef.current) {
+      inputRef.current.value = '';
+    }
+  }, [data]);
 
   const getMessageLink = async (id) => {
     const host = RCInstance.getHost();
