@@ -134,7 +134,7 @@ const EmbeddedChat = (props) => {
   }, [RCInstance, auth, setIsLoginIn]);
 
   useEffect(() => {
-    RCInstance.auth.onAuthChange((user) => {
+    const handleAuthChange = (user) => {
       if (user) {
         RCInstance.connect()
           .then(() => {
@@ -149,9 +149,16 @@ const EmbeddedChat = (props) => {
           })
           .catch(console.error);
       } else {
+        // Close the DDP connection on logout so the next login gets a fresh connection.
+        RCInstance.close().catch(console.error);
         setIsUserAuthenticated(false);
       }
-    });
+    };
+    RCInstance.auth.onAuthChange(handleAuthChange);
+
+    return () => {
+      RCInstance.auth.removeAuthListener(handleAuthChange);
+    };
   }, [
     RCInstance,
     setAuthenticatedName,

@@ -36,7 +36,9 @@ class RocketChatAuth {
   async onAuthChange(callback: (user: object | null) => void) {
     this.authListeners.push(callback);
     const user = await this.getCurrentUser();
-    callback(user);
+    if (this.authListeners.includes(callback)) {
+      callback(user);
+    }
   }
 
   async removeAuthListener(callback: (user: object | null) => void) {
@@ -72,6 +74,7 @@ class RocketChatAuth {
       }
     );
     this.setUser(response.data);
+    this.notifyAuthListeners();
     return this.currentUser;
   }
 
@@ -92,6 +95,7 @@ class RocketChatAuth {
       credentials
     );
     this.setUser(response.data);
+    this.notifyAuthListeners();
     return this.currentUser;
   }
 
@@ -107,6 +111,7 @@ class RocketChatAuth {
       api: this.api,
     });
     this.setUser(response.data);
+    this.notifyAuthListeners();
     return this.currentUser;
   }
 
@@ -190,10 +195,10 @@ class RocketChatAuth {
     try {
       const token = await this.getToken();
       if (token) {
-        const user = await this.loginWithResumeToken(token); // will notifyAuthListeners on successful login
+        const user = await this.loginWithResumeToken(token);
         if (user) {
           this.lastFetched = new Date();
-          await this.getCurrentUser(); // refresh the token if needed
+          await this.getCurrentUser();
         }
       }
     } catch (e) {

@@ -146,14 +146,12 @@ const ChatBody = ({
   );
 
   useEffect(() => {
-    RCInstance.auth.onAuthChange((user) => {
-      if (user) {
-        RCInstance.addMessageListener(addMessage);
-        RCInstance.addMessageDeleteListener(removeMessage);
-        RCInstance.addActionTriggeredListener(onActionTriggerResponse);
-        RCInstance.addUiInteractionListener(onActionTriggerResponse);
-      }
-    });
+    if (isUserAuthenticated) {
+      RCInstance.addMessageListener(addMessage);
+      RCInstance.addMessageDeleteListener(removeMessage);
+      RCInstance.addActionTriggeredListener(onActionTriggerResponse);
+      RCInstance.addUiInteractionListener(onActionTriggerResponse);
+    }
 
     return () => {
       RCInstance.removeMessageListener(addMessage);
@@ -161,28 +159,30 @@ const ChatBody = ({
       RCInstance.removeActionTriggeredListener(onActionTriggerResponse);
       RCInstance.removeUiInteractionListener(onActionTriggerResponse);
     };
-  }, [RCInstance, addMessage, removeMessage, onActionTriggerResponse]);
+  }, [
+    RCInstance,
+    isUserAuthenticated,
+    addMessage,
+    removeMessage,
+    onActionTriggerResponse,
+  ]);
 
   useEffect(() => {
-    RCInstance.auth.onAuthChange((user) => {
-      if (user) {
-        getMessagesAndRoles();
-        setHasMoreMessages(true);
-      } else {
-        getMessagesAndRoles(anonymousMode);
-      }
-    });
-  }, [RCInstance, anonymousMode, getMessagesAndRoles]);
+    if (isUserAuthenticated) {
+      getMessagesAndRoles();
+      setHasMoreMessages(true);
+    } else {
+      getMessagesAndRoles(anonymousMode);
+    }
+  }, [RCInstance, isUserAuthenticated, anonymousMode, getMessagesAndRoles]);
 
   useEffect(() => {
-    RCInstance.auth.onAuthChange((user) => {
-      if (user) {
-        fetchAndSetPermissions();
-      } else {
-        permissionsRef.current = null;
-      }
-    });
-  }, []);
+    if (isUserAuthenticated) {
+      fetchAndSetPermissions();
+    } else {
+      permissionsRef.current = null;
+    }
+  }, [isUserAuthenticated, fetchAndSetPermissions, permissionsRef]);
 
   // Expose clearUnreadDivider function via ref for ChatInput to call
   useEffect(() => {
