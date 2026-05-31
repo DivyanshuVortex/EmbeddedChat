@@ -74,7 +74,6 @@ class RocketChatAuth {
       }
     );
     this.setUser(response.data);
-    this.notifyAuthListeners();
     return this.currentUser;
   }
 
@@ -95,7 +94,6 @@ class RocketChatAuth {
       credentials
     );
     this.setUser(response.data);
-    this.notifyAuthListeners();
     return this.currentUser;
   }
 

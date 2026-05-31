@@ -169,12 +169,14 @@ const EmbeddedChat = (props) => {
         RCInstance.connect()
           .then(() => {
             console.log(`Connected to RocketChat ${RCInstance.host}`);
-            const { me } = user;
-            setAuthenticatedAvatarUrl(me.avatarUrl);
-            setAuthenticatedUsername(me.username);
-            setAuthenticatedUserId(me._id);
-            setAuthenticatedName(me.name);
-            setAuthenticatedUserRoles(me.roles);
+            const me = user.me || user.data?.me;
+            if (me) {
+              setAuthenticatedAvatarUrl(me.avatarUrl);
+              setAuthenticatedUsername(me.username);
+              setAuthenticatedUserId(me._id);
+              setAuthenticatedName(me.name);
+              setAuthenticatedUserRoles(me.roles);
+            }
             setIsUserAuthenticated(true);
           })
           .catch(console.error);
