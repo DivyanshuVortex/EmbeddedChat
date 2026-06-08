@@ -26,11 +26,13 @@ import GlobalStyles from './GlobalStyles';
 import { overrideECProps } from '../lib/overrideECProps';
 
 const EmbeddedChat = (props) => {
-  const [config, setConfig] = useState(() => props);
+  const [remoteOverrides, setRemoteOverrides] = useState({});
 
-  useEffect(() => {
-    setConfig(props);
-  }, [props]);
+  const config = useMemo(
+    () => ({ ...props, ...remoteOverrides }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props, remoteOverrides]
+  );
 
   const {
     isClosable = false,
@@ -52,13 +54,17 @@ const EmbeddedChat = (props) => {
     className = '',
     style = {},
     hideHeader = false,
-    auth = {
-      flow: 'PASSWORD',
-    },
+    auth: authProp = null,
     secure = false,
     dark = false,
     remoteOpt = false,
   } = config;
+
+  const auth = useMemo(
+    () => authProp ?? { flow: 'PASSWORD' },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [authProp?.flow, authProp?.credentials]
+  );
 
   const hasMounted = useRef(false);
   const { classNames, styleOverrides } = useComponentOverrides('EmbeddedChat');
@@ -83,6 +89,8 @@ const EmbeddedChat = (props) => {
   }));
 
   const setIsLoginIn = useLoginStore((state) => state.setIsLoginIn);
+  const setMessages = useMessageStore((state) => state.setMessages);
+
   if (isClosable && !setClosableState) {
     throw Error(
       'Please provide a setClosableState to props when isClosable = true'
@@ -100,24 +108,52 @@ const EmbeddedChat = (props) => {
   }, [host, roomId, getToken, deleteToken, saveToken]);
 
   const [RCInstance, setRCInstance] = useState(() => initializeRCInstance());
+  const rcInstanceRef = useRef(RCInstance);
+  rcInstanceRef.current = RCInstance;
 
   useEffect(() => {
-    const reInstantiate = () => {
-      const newRCInstance = initializeRCInstance();
-      setRCInstance(newRCInstance);
-    };
-
     if (!hasMounted.current) {
       hasMounted.current = true;
       return;
     }
 
-    RCInstance.close().then(reInstantiate).catch(console.error);
+    const newRCInstance = initializeRCInstance();
+    const oldRCInstance = rcInstanceRef.current;
 
-    return () => {
-      RCInstance.close().catch(console.error);
-    };
-  }, [roomId, host, initializeRCInstance]);
+    // Clear global state so that the UI resets and waits for new host's auth and data
+    setIsUserAuthenticated(false);
+    setAuthenticatedUsername(null);
+    setAuthenticatedAvatarUrl(null);
+    setAuthenticatedUserId(null);
+    setAuthenticatedName(null);
+    setAuthenticatedUserRoles([]);
+    setMessages([]);
+
+    setRCInstance(newRCInstance);
+    oldRCInstance.close().catch((e) => console.error(e?.message || e));
+  }, [
+    roomId,
+    host,
+    initializeRCInstance,
+    setIsUserAuthenticated,
+    setAuthenticatedUsername,
+    setAuthenticatedAvatarUrl,
+    setAuthenticatedUserId,
+    setAuthenticatedName,
+    setAuthenticatedUserRoles,
+    setMessages,
+  ]);
+
+  useEffect(
+    () => () => {
+      if (hasMounted.current) {
+        rcInstanceRef.current
+          .close()
+          .catch((e) => console.error(e?.message || e));
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const autoLogin = async () => {
@@ -125,7 +161,7 @@ const EmbeddedChat = (props) => {
       try {
         await RCInstance.autoLogin(auth);
       } catch (error) {
-        console.error(error);
+        console.error(error?.message || error);
       } finally {
         setIsLoginIn(false);
       }
@@ -139,12 +175,14 @@ const EmbeddedChat = (props) => {
         RCInstance.connect()
           .then(() => {
             console.log(`Connected to RocketChat ${RCInstance.host}`);
-            const { me } = user;
-            setAuthenticatedAvatarUrl(me.avatarUrl);
-            setAuthenticatedUsername(me.username);
-            setAuthenticatedUserId(me._id);
-            setAuthenticatedName(me.name);
-            setAuthenticatedUserRoles(me.roles);
+            const me = user.me || user.data?.me;
+            if (me) {
+              setAuthenticatedAvatarUrl(me.avatarUrl);
+              setAuthenticatedUsername(me.username);
+              setAuthenticatedUserId(me._id);
+              setAuthenticatedName(me.name);
+              setAuthenticatedUserRoles(me.roles);
+            }
             setIsUserAuthenticated(true);
           })
           .catch(console.error);
@@ -176,10 +214,10 @@ const EmbeddedChat = (props) => {
 
         if (appInfo) {
           const remoteConfig = appInfo.propConfig;
-          setConfig((prevConfig) => overrideECProps(prevConfig, remoteConfig));
+          setRemoteOverrides((prev) => overrideECProps(prev, remoteConfig));
         }
       } catch (error) {
-        console.error('Error fetching remote config:', error);
+        console.error('Error fetching remote config:', error?.message || error);
       } finally {
         setIsSynced(true);
       }
@@ -187,7 +225,7 @@ const EmbeddedChat = (props) => {
     if (remoteOpt) {
       getConfig();
     }
-  }, [RCInstance, remoteOpt, setConfig, setIsSynced]);
+  }, [RCInstance, remoteOpt, setIsSynced]);
 
   const ECOptions = useMemo(
     () => ({

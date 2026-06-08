@@ -86,6 +86,11 @@ const ChatBody = ({
     (state) => state.isUserAuthenticated
   );
 
+  const isUserAuthenticatedRef = useRef(isUserAuthenticated);
+  useEffect(() => {
+    isUserAuthenticatedRef.current = isUserAuthenticated;
+  }, [isUserAuthenticated]);
+
   const username = useUserStore((state) => state.username);
 
   const { getMessagesAndRoles, fetchAndSetPermissions, permissionsRef } =
@@ -217,23 +222,15 @@ const ChatBody = ({
       if (
         messageListRef.current.scrollTop === 0 &&
         !loadingOlderMessages &&
-        hasMoreMessages
+        hasMoreMessages &&
+        (isUserAuthenticatedRef.current || anonymousMode)
       ) {
         setLoadingOlderMessages(true);
 
         try {
           const olderMessages = await RCInstance.getOlderMessages(
             anonymousMode,
-            ECOptions?.enableThreads
-              ? {
-                  query: {
-                    tmid: {
-                      $exists: false,
-                    },
-                  },
-                  offset,
-                }
-              : undefined,
+            { offset },
             anonymousMode ? false : isChannelPrivate
           );
           const messageList = messageListRef.current;
@@ -280,7 +277,6 @@ const ChatBody = ({
     hasMoreMessages,
     RCInstance,
     isChannelPrivate,
-    ECOptions?.enableThreads,
     loadingOlderMessages,
     setScrollPosition,
     setIsUserScrolledUp,
