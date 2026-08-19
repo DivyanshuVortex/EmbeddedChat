@@ -18,8 +18,14 @@ import {
 import { ChatLayout } from './ChatLayout';
 import { ChatHeader } from './ChatHeader';
 import { RCInstanceProvider } from '../context/RCInstance';
-import { useUserStore, useLoginStore, useMessageStore } from '../store';
+import {
+  useUserStore,
+  useLoginStore,
+  useMessageStore,
+  useChannelStore,
+} from '../store';
 import DefaultTheme from '../theme/DefaultTheme';
+import MatrixTheme from '../theme/MatrixTheme';
 import { getTokenStorage } from '../lib/auth';
 import { styles } from './EmbeddedChat.styles';
 import GlobalStyles from './GlobalStyles';
@@ -58,6 +64,7 @@ const EmbeddedChat = (props) => {
     secure = false,
     dark = false,
     remoteOpt = false,
+    layoutMode = 'bubble',
   } = config;
 
   const auth = useMemo(
@@ -65,6 +72,8 @@ const EmbeddedChat = (props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [authProp?.flow, authProp?.credentials]
   );
+
+  const aiAdapter = props.aiAdapter ?? null;
 
   const hasMounted = useRef(false);
   const { classNames, styleOverrides } = useComponentOverrides('EmbeddedChat');
@@ -172,7 +181,8 @@ const EmbeddedChat = (props) => {
   useEffect(() => {
     const handleAuthChange = (user) => {
       if (user) {
-        RCInstance.connect()
+        const { isChannelPrivate } = useChannelStore.getState();
+        RCInstance.connect(isChannelPrivate)
           .then(() => {
             console.log(`Connected to RocketChat ${RCInstance.host}`);
             const me = user.me || user.data?.me;
@@ -227,6 +237,8 @@ const EmbeddedChat = (props) => {
     }
   }, [RCInstance, remoteOpt, setIsSynced]);
 
+  const memoizedAiAdapter = useMemo(() => aiAdapter, [aiAdapter]);
+
   const ECOptions = useMemo(
     () => ({
       enableThreads,
@@ -243,6 +255,8 @@ const EmbeddedChat = (props) => {
       showUsername,
       hideHeader,
       anonymousMode,
+      layoutMode,
+      aiAdapter: memoizedAiAdapter,
     }),
     [
       enableThreads,
@@ -259,6 +273,8 @@ const EmbeddedChat = (props) => {
       showUsername,
       hideHeader,
       anonymousMode,
+      layoutMode,
+      memoizedAiAdapter,
     ]
   );
 
@@ -267,14 +283,21 @@ const EmbeddedChat = (props) => {
     [RCInstance, ECOptions]
   );
 
+  const resolvedTheme = useMemo(() => {
+    if (theme === 'matrix') {
+      return MatrixTheme;
+    }
+    return theme || DefaultTheme;
+  }, [theme]);
+
   if (!isSynced) return null;
 
   return (
-    <ThemeProvider theme={theme || DefaultTheme} mode={dark ? 'dark' : 'light'}>
+    <ThemeProvider theme={resolvedTheme} mode={dark ? 'dark' : 'light'}>
       <RCInstanceProvider value={RCContextValue}>
         <Box
           css={[
-            styles.embeddedchat(theme || DefaultTheme, dark),
+            styles.embeddedchat(resolvedTheme, dark),
             css`
               width: ${width};
               height: ${height};
@@ -333,6 +356,13 @@ EmbeddedChat.propTypes = {
   style: PropTypes.object,
   hideHeader: PropTypes.bool,
   dark: PropTypes.bool,
+  aiAdapter: PropTypes.shape({
+    name: PropTypes.string,
+    sendPrompt: PropTypes.func.isRequired,
+    getSuggestions: PropTypes.func,
+    summarize: PropTypes.func,
+    isAvailable: PropTypes.func.isRequired,
+  }),
 };
 
 export default memo(EmbeddedChat);

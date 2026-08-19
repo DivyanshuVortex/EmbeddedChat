@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { css } from '@emotion/react';
 import PropTypes from 'prop-types';
 import {
@@ -24,6 +24,7 @@ import {
   useStarredMessageStore,
   useFileStore,
   useSidebarStore,
+  useAiStore,
 } from '../../store';
 import { DynamicHeader } from '../DynamicHeader';
 import useFetchChatData from '../../hooks/useFetchChatData';
@@ -31,6 +32,24 @@ import useSettingsStore from '../../store/settingsStore';
 import getChatHeaderStyles from './ChatHeader.styles';
 import useSetExclusiveState from '../../hooks/useSetExclusiveState';
 import SurfaceMenu from '../SurfaceMenu/SurfaceMenu';
+
+const GlobeIcon = ({ size }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ marginRight: '4px', flexShrink: 0 }}
+  >
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </svg>
+);
 
 const ChatHeader = ({
   isClosable,
@@ -40,7 +59,7 @@ const ChatHeader = ({
   className = '',
   style = {},
   optionConfig = {
-    surfaceItems: ['minmax', 'close'],
+    surfaceItems: ['catch-up', 'minmax', 'close'],
     menuItems: [
       'thread',
       'mentions',
@@ -84,7 +103,14 @@ const ChatHeader = ({
   const workspaceLevelRoles = useUserStore((state) => state.roles);
 
   const { RCInstance, ECOptions } = useRCContext();
-  const { channelName, anonymousMode, showRoles } = ECOptions ?? {};
+  const {
+    channelName,
+    anonymousMode,
+    showRoles,
+    theme: configTheme,
+  } = ECOptions ?? {};
+
+  const isFederated = channelInfo?.federated || configTheme === 'matrix';
 
   const isUserAuthenticated = useUserStore(
     (state) => state.isUserAuthenticated
@@ -102,11 +128,80 @@ const ChatHeader = ({
   const headerTitle = useMessageStore((state) => state.headerTitle);
   const filtered = useMessageStore((state) => state.filtered);
   const setFilter = useMessageStore((state) => state.setFilter);
+  const setCanSendMsg = useUserStore((state) => state.setCanSendMsg);
+  const authenticatedUserId = useUserStore((state) => state.userId);
+  const addCatchUp = useAiStore((state) => state.addCatchUp);
+  const isCatchUpProcessing = useAiStore((state) => state.isCatchUpProcessing);
+  const setCatchUpProcessing = useAiStore(
+    (state) => state.setCatchUpProcessing
+  );
+  const [isAiAvailable, setIsAiAvailable] = useState(false);
 
   const isThreadOpen = useMessageStore((state) => state.isThreadOpen);
   const threadMainMessage = useMessageStore((state) => state.threadMainMessage);
 
   const closeThread = useMessageStore((state) => state.closeThread);
+
+  useEffect(() => {
+    if (!ECOptions?.aiAdapter?.isAvailable) {
+      setIsAiAvailable(false);
+      return undefined;
+    }
+
+    let active = true;
+    ECOptions.aiAdapter
+      .isAvailable()
+      .then((available) => active && setIsAiAvailable(available))
+      .catch(() => active && setIsAiAvailable(false));
+
+    return () => {
+      active = false;
+    };
+  }, [ECOptions?.aiAdapter]);
+
+  const handleCatchUp = useCallback(async () => {
+    if (!ECOptions?.aiAdapter?.summarize || isCatchUpProcessing) return;
+
+    const threadId = isThreadOpen ? threadMainMessage?._id : null;
+    const sourceMessages = threadId
+      ? [
+          threadMainMessage,
+          ...useMessageStore.getState().threadMessages,
+        ].filter(Boolean)
+      : useMessageStore.getState().messages;
+
+    if (!sourceMessages.length) return;
+    const recentMessages = [...sourceMessages]
+      .sort((first, second) => new Date(first.ts) - new Date(second.ts))
+      .slice(-20);
+
+    setCatchUpProcessing(true);
+    try {
+      const text = await ECOptions.aiAdapter.summarize(recentMessages, {
+        roomId: ECOptions.roomId,
+        userId: authenticatedUserId,
+        history: recentMessages,
+      });
+      if (text) addCatchUp({ text, threadId });
+    } catch (error) {
+      console.error('[AI Adapter] catch up failed:', error);
+      dispatchToastMessage({
+        type: 'error',
+        message: 'Could not generate a catch up. Please try again.',
+      });
+    } finally {
+      setCatchUpProcessing(false);
+    }
+  }, [
+    ECOptions,
+    isCatchUpProcessing,
+    isThreadOpen,
+    threadMainMessage,
+    authenticatedUserId,
+    setCatchUpProcessing,
+    addCatchUp,
+    dispatchToastMessage,
+  ]);
 
   const setShowMembers = useMemberStore((state) => state.setShowMembers);
   const setShowSearch = useSearchMessageStore((state) => state.setShowSearch);
@@ -131,8 +226,6 @@ const ChatHeader = ({
     }
     setFilter(false);
   };
-  const setCanSendMsg = useUserStore((state) => state.setCanSendMsg);
-  const authenticatedUserId = useUserStore((state) => state.userId);
   const handleLogout = useCallback(async () => {
     try {
       await RCInstance.logout();
@@ -203,8 +296,7 @@ const ChatHeader = ({
       ) {
         setIsChannelArchived(true);
         const roomInfo = await RCInstance.getRoomInfo();
-        const roomData = roomInfo.result[roomInfo.result.length - 1];
-        setChannelInfo(roomData);
+        setChannelInfo(roomInfo?.room);
       } else if ('errorType' in res && res.errorType === 'Not Allowed') {
         dispatchToastMessage({
           type: 'error',
@@ -235,6 +327,17 @@ const ChatHeader = ({
 
   const options = useMemo(
     () => ({
+      'catch-up': {
+        label: isCatchUpProcessing ? 'Creating catch up' : 'Catch up',
+        id: 'catch-up',
+        onClick: handleCatchUp,
+        iconName: 'summarize',
+        visible: Boolean(
+          isAiAvailable &&
+            ECOptions?.aiAdapter?.summarize &&
+            isUserAuthenticated
+        ),
+      },
       minmax: {
         label: `${fullScreen ? 'Minimize' : 'Maximize'}`,
         id: 'minmax',
@@ -315,6 +418,10 @@ const ChatHeader = ({
     }),
     [
       fullScreen,
+      ECOptions?.aiAdapter?.summarize,
+      handleCatchUp,
+      isAiAvailable,
+      isCatchUpProcessing,
       isClosable,
       isUserAuthenticated,
       handleLogout,
@@ -391,16 +498,20 @@ const ChatHeader = ({
                       css={styles.channelName}
                       onClick={() => setExclusiveState(setShowChannelinfo)}
                     >
-                      <Icon
-                        name={
-                          isRoomTeam
-                            ? 'team'
-                            : isChannelPrivate
-                            ? 'hash_lock'
-                            : 'hash'
-                        }
-                        size={fullScreen ? '1.25rem' : '1rem'}
-                      />
+                      {isFederated ? (
+                        <GlobeIcon size={fullScreen ? '1.25rem' : '1rem'} />
+                      ) : (
+                        <Icon
+                          name={
+                            isRoomTeam
+                              ? 'team'
+                              : isChannelPrivate
+                              ? 'hash_lock'
+                              : 'hash'
+                          }
+                          size={fullScreen ? '1.25rem' : '1rem'}
+                        />
+                      )}
                       <div
                         css={css`
                           font-size: ${fullScreen ? '1.3rem' : '1.25rem'};
